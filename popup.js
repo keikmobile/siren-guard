@@ -291,16 +291,19 @@ if (enableTimeRangeEl) {
 
 // エクスポート
 document.getElementById("btn-export").addEventListener("click", async () => {
-  const data = await ext.storage.local.get(["rules", "intentLog"]);
+  const data = await ext.storage.local.get(["rules", "intentLog", "whitelistConfig"]);
   const payload = {
     rules: data.rules || [],
     intentLog: data.intentLog || [],
+    whitelistConfig: data.whitelistConfig || null,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "siren-guard-export.json";
+  const now = new Date();
+  const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}`;
+  a.download = `siren-guard-export-${ts}.json`;
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -324,16 +327,17 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
     return;
   }
 
-  // 新形式 { rules, intentLog } と旧形式（配列）の両方に対応
+  // 新形式 { rules, intentLog, whitelistConfig } と旧形式（配列）の両方に対応
   const importedRules = Array.isArray(imported) ? imported : (imported.rules || []);
   const importedIntentLog = Array.isArray(imported) ? [] : (imported.intentLog || []);
+  const importedWhitelistConfig = Array.isArray(imported) ? null : (imported.whitelistConfig || null);
 
   if (!Array.isArray(importedRules)) {
     document.getElementById("import-status").textContent = "読み込み失敗: フォーマットが不正です";
     return;
   }
 
-  const data = await ext.storage.local.get(["rules", "intentLog"]);
+  const data = await ext.storage.local.get(["rules", "intentLog", "whitelistConfig"]);
   const existing = data.rules || [];
   const existingDomains = new Set(existing.map(r => r.domain));
 
@@ -362,13 +366,21 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
   const mergedLog = [...existingLog, ...newEntries];
   if (mergedLog.length > 1000) mergedLog.splice(0, mergedLog.length - 1000);
 
-  await ext.storage.local.set({ rules: existing, intentLog: mergedLog });
+  const saveData = { rules: existing, intentLog: mergedLog };
+  let whitelistImported = false;
+  if (importedWhitelistConfig && !data.whitelistConfig) {
+    saveData.whitelistConfig = importedWhitelistConfig;
+    whitelistImported = true;
+  }
+  await ext.storage.local.set(saveData);
 
   const parts = [];
   if (addedRules > 0) parts.push(`ルール ${addedRules}件`);
   if (newEntries.length > 0) parts.push(`衝動ログ ${newEntries.length}件`);
+  if (whitelistImported) parts.push("ホワイトリスト設定");
   document.getElementById("import-status").textContent =
     parts.length > 0 ? `${parts.join("・")}を追加しました` : "追加できるデータがありませんでした（重複または無効）";
+  if (whitelistImported) loadAndRenderWhitelist();
   loadAndRender();
 });
 
@@ -385,4 +397,87 @@ if (location.pathname.endsWith("popup.html")) {
   });
 }
 
+async function loadAndRenderWhitelist() {
+  const data = await ext.storage.local.get("whitelistConfig");
+  const config = data.whitelistConfig || { enabled: false, timeRange: { start: "09:00", end: "18:00" }, allowedDomains: [] };
+
+  document.getElementById("enable-whitelist").checked = config.enabled;
+  document.getElementById("whitelist-config").style.display = config.enabled ? "flex" : "none";
+  document.getElementById("whitelist-time-start").value = config.timeRange.start;
+  document.getElementById("whitelist-time-end").value = config.timeRange.end;
+
+  const { start, end } = config.timeRange;
+  const now = new Date();
+  const current = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  const isActive = config.enabled && (start <= end
+    ? (current >= start && current < end)
+    : (current >= start || current < end));
+  document.getElementById("whitelist-badge").style.display = isActive ? "inline" : "none";
+
+  const listEl = document.getElementById("whitelist-domain-list");
+  listEl.innerHTML = "";
+  for (const domain of (config.allowedDomains || [])) {
+    const li = document.createElement("li");
+    li.className = "whitelist-domain-item";
+    const span = document.createElement("span");
+    span.textContent = domain;
+    span.title = domain;
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "whitelist-btn-remove";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", async () => {
+      const d = await ext.storage.local.get("whitelistConfig");
+      const c = d.whitelistConfig || config;
+      c.allowedDomains = c.allowedDomains.filter(x => x !== domain);
+      await ext.storage.local.set({ whitelistConfig: c });
+      loadAndRenderWhitelist();
+    });
+    li.appendChild(span);
+    li.appendChild(removeBtn);
+    listEl.appendChild(li);
+  }
+}
+
+document.getElementById("enable-whitelist").addEventListener("change", async (e) => {
+  const data = await ext.storage.local.get("whitelistConfig");
+  const config = data.whitelistConfig || { enabled: false, timeRange: { start: "09:00", end: "18:00" }, allowedDomains: [] };
+  config.enabled = e.target.checked;
+  await ext.storage.local.set({ whitelistConfig: config });
+  loadAndRenderWhitelist();
+});
+
+document.getElementById("whitelist-time-start").addEventListener("change", async (e) => {
+  const data = await ext.storage.local.get("whitelistConfig");
+  const config = data.whitelistConfig || { enabled: true, timeRange: { start: "09:00", end: "18:00" }, allowedDomains: [] };
+  config.timeRange.start = e.target.value;
+  await ext.storage.local.set({ whitelistConfig: config });
+  loadAndRenderWhitelist();
+});
+
+document.getElementById("whitelist-time-end").addEventListener("change", async (e) => {
+  const data = await ext.storage.local.get("whitelistConfig");
+  const config = data.whitelistConfig || { enabled: true, timeRange: { start: "09:00", end: "18:00" }, allowedDomains: [] };
+  config.timeRange.end = e.target.value;
+  await ext.storage.local.set({ whitelistConfig: config });
+  loadAndRenderWhitelist();
+});
+
+document.getElementById("whitelist-btn-add").addEventListener("click", async () => {
+  let domain = document.getElementById("whitelist-domain-input").value.trim().toLowerCase();
+  if (!domain) return;
+  try {
+    domain = domain.includes("://") ? new URL(domain).hostname : domain.split("/")[0];
+  } catch (_) { return; }
+  if (!domain) return;
+  const data = await ext.storage.local.get("whitelistConfig");
+  const config = data.whitelistConfig || { enabled: true, timeRange: { start: "09:00", end: "18:00" }, allowedDomains: [] };
+  if (!config.allowedDomains.includes(domain)) {
+    config.allowedDomains.push(domain);
+    await ext.storage.local.set({ whitelistConfig: config });
+  }
+  document.getElementById("whitelist-domain-input").value = "";
+  loadAndRenderWhitelist();
+});
+
 loadAndRender();
+loadAndRenderWhitelist();

@@ -22,6 +22,18 @@ function findMatchingRule(rules, hostname) {
   return rules.find(rule => matchesDomain(hostname, rule.domain));
 }
 
+function isWhitelistActive(config) {
+  if (!config || !config.enabled || !config.timeRange) return false;
+  const { start, end } = config.timeRange;
+  const now = new Date();
+  const current = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  if (start <= end) {
+    return current >= start && current < end;
+  } else {
+    return current >= start || current < end;
+  }
+}
+
 function isBlockedByTime(rule) {
   if (!rule.allowedTimeRange) return false;
   const { start, end } = rule.allowedTimeRange;
@@ -136,12 +148,40 @@ ext.webNavigation.onCommitted.addListener(async (details) => {
   // ドメインが変わる可能性があるのでまず現セッションをフラッシュ
   await flushSession(details.tabId);
 
-  const data = await ext.storage.local.get(["rules", "accessLog", "timeLog", "blockedAt", "bypasses"]);
+  const data = await ext.storage.local.get(["rules", "accessLog", "timeLog", "blockedAt", "bypasses", "whitelistConfig"]);
   const rules = data.rules || [];
   const accessLog = data.accessLog || {};
   const timeLog = data.timeLog || {};
   const blockedAt = data.blockedAt || {};
   const bypasses = data.bypasses || {};
+
+  const whitelistConfig = data.whitelistConfig || null;
+
+  // ホワイトリストモードチェック（全サイト対象）
+  if (isWhitelistActive(whitelistConfig)) {
+    const allowedDomains = whitelistConfig.allowedDomains || [];
+    const inWhitelist = allowedDomains.some(d => matchesDomain(hostname, d));
+    if (!inWhitelist) {
+      if (bypasses[hostname] && bypasses[hostname].date === dateKey) {
+        const newBypasses = { ...bypasses };
+        delete newBypasses[hostname];
+        await ext.storage.local.set({ bypasses: newBypasses });
+        await startSession(details.tabId, hostname);
+        return;
+      }
+      if (!blockedAt[hostname] || blockedAt[hostname].date !== dateKey) {
+        await ext.storage.local.set({
+          blockedAt: { ...blockedAt, [hostname]: { date: dateKey, time: new Date().toISOString() } },
+        });
+      }
+      const { end } = whitelistConfig.timeRange;
+      const blockedUrl = ext.runtime.getURL(
+        `blocked.html?site=${encodeURIComponent(hostname)}&reason=whitelist&whitelistEnd=${encodeURIComponent(end)}`
+      );
+      ext.tabs.update(details.tabId, { url: blockedUrl });
+      return;
+    }
+  }
 
   const rule = findMatchingRule(rules, hostname);
   if (!rule) return;
@@ -271,3 +311,7 @@ ext.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 pruneOldData();
+
+if (typeof module !== "undefined") {
+  module.exports = { isWhitelistActive, isBlockedByTime, matchesDomain, findMatchingRule, getJSTDateKey };
+}
