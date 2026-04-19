@@ -33,6 +33,7 @@ const site = params.get("site") || "このサイト";
 const reason = params.get("reason") || "";
 const allowedStart = params.get("allowedStart") || "";
 const allowedEnd = params.get("allowedEnd") || "";
+const whitelistEnd = params.get("whitelistEnd") || "";
 const limit = params.get("limit") || "?";
 const count = params.get("count") || limit;
 const timeSec = parseInt(params.get("timeSec") || "0", 10);
@@ -61,11 +62,31 @@ function makeStat(label, value, over) {
   return wrap;
 }
 
-if (reason === "time") {
+if (reason === "whitelist") {
   const infoEl = document.createElement("div");
   infoEl.className = "time-block-info";
-  infoEl.innerHTML = `<div class="time-block-label">この時間帯はアクセスできません</div>
-    <div class="time-block-range">アクセス可能: ${allowedStart} 〜 ${allowedEnd}</div>`;
+  const labelEl = document.createElement("div");
+  labelEl.className = "time-block-label";
+  labelEl.textContent = "ホワイトリストモード中のため、このサイトはアクセスできません";
+  infoEl.appendChild(labelEl);
+  if (whitelistEnd) {
+    const rangeEl = document.createElement("div");
+    rangeEl.className = "time-block-range";
+    rangeEl.textContent = `ホワイトリストモード終了: ${whitelistEnd}`;
+    infoEl.appendChild(rangeEl);
+  }
+  statsEl.appendChild(infoEl);
+} else if (reason === "time") {
+  const infoEl = document.createElement("div");
+  infoEl.className = "time-block-info";
+  const labelEl = document.createElement("div");
+  labelEl.className = "time-block-label";
+  labelEl.textContent = "この時間帯はアクセスできません";
+  const rangeEl = document.createElement("div");
+  rangeEl.className = "time-block-range";
+  rangeEl.textContent = `アクセス可能: ${allowedStart} 〜 ${allowedEnd}`;
+  infoEl.appendChild(labelEl);
+  infoEl.appendChild(rangeEl);
   statsEl.appendChild(infoEl);
 } else {
   statsEl.appendChild(makeStat("アクセス回数", `${count} / ${limit}回`, countExceeded));

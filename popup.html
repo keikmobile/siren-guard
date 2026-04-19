@@ -223,10 +223,150 @@
       cursor: pointer;
     }
     .btn-edit-cancel:hover { background: #e0e0e0; }
+    #whitelist-section {
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      background: #f8f8ff;
+      border: 1px solid #dde;
+      border-radius: 6px;
+    }
+    .whitelist-section-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .whitelist-section-title {
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: #444;
+      flex: 1;
+    }
+    .whitelist-badge {
+      font-size: 0.7rem;
+      background: #1a73e8;
+      color: #fff;
+      padding: 1px 6px;
+      border-radius: 8px;
+    }
+    .whitelist-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    #whitelist-config {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .whitelist-time-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+      color: #666;
+    }
+    .whitelist-time-row input[type="time"] {
+      flex: 1;
+      padding: 4px 5px;
+      font-size: 0.8rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #whitelist-domain-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .whitelist-domain-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .whitelist-domain-item span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .whitelist-btn-remove {
+      background: none;
+      border: none;
+      color: #c00;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .whitelist-btn-remove:hover { color: #800; }
+    .whitelist-add-row {
+      display: flex;
+      gap: 4px;
+    }
+    .whitelist-add-row input {
+      flex: 1;
+      padding: 5px 6px;
+      font-size: 0.8rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .whitelist-btn-add {
+      padding: 5px 10px;
+      font-size: 0.8rem;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .whitelist-btn-add:hover { background: #1558b0; }
+    .section-divider {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 0 0 10px;
+    }
   </style>
 </head>
 <body>
   <h1>Siren Guard</h1>
+
+  <div id="whitelist-section">
+    <div class="whitelist-section-header">
+      <span class="whitelist-section-title">ホワイトリストモード</span>
+      <span id="whitelist-badge" class="whitelist-badge" style="display:none">有効中</span>
+    </div>
+    <div class="whitelist-toggle-row">
+      <input type="checkbox" id="enable-whitelist">
+      <label for="enable-whitelist">時間帯限定で有効にする</label>
+    </div>
+    <div id="whitelist-config">
+      <div class="whitelist-time-row">
+        <span>時間帯:</span>
+        <input type="time" id="whitelist-time-start" value="09:00">
+        <span>〜</span>
+        <input type="time" id="whitelist-time-end" value="18:00">
+      </div>
+      <ul id="whitelist-domain-list"></ul>
+      <div class="whitelist-add-row">
+        <input id="whitelist-domain-input" type="text" placeholder="許可するドメイン">
+        <button class="whitelist-btn-add" id="whitelist-btn-add">追加</button>
+      </div>
+    </div>
+  </div>
+  <hr class="section-divider">
+
   <ul id="rule-list"></ul>
   <div id="io-bar">
     <button class="btn-io" id="btn-export">エクスポート</button>
