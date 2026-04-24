@@ -104,21 +104,33 @@ ext.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "sessionCheckpoint") await checkpointSessions();
 });
 
+function getJSTDateKeyOffset(daysBack) {
+  const now = new Date();
+  const jstOffset = 9 * 60;
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  const jst = new Date(utcMs + jstOffset * 60 * 1000);
+  jst.setDate(jst.getDate() + daysBack);
+  const y = jst.getFullYear();
+  const m = String(jst.getMonth() + 1).padStart(2, "0");
+  const d = String(jst.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 async function pruneOldData() {
   const data = await ext.storage.local.get(["accessLog", "timeLog", "blockedAt", "bypasses"]);
-  const todayKey = getJSTDateKey();
+  const cutoffKey = getJSTDateKeyOffset(-6);
 
   const prunedAccessLog = Object.fromEntries(
-    Object.entries(data.accessLog || {}).filter(([k]) => k >= todayKey)
+    Object.entries(data.accessLog || {}).filter(([k]) => k >= cutoffKey)
   );
   const prunedTimeLog = Object.fromEntries(
-    Object.entries(data.timeLog || {}).filter(([k]) => k >= todayKey)
+    Object.entries(data.timeLog || {}).filter(([k]) => k >= cutoffKey)
   );
   const prunedBlockedAt = Object.fromEntries(
-    Object.entries(data.blockedAt || {}).filter(([, v]) => v.date === todayKey)
+    Object.entries(data.blockedAt || {}).filter(([, v]) => v.date >= cutoffKey)
   );
   const prunedBypasses = Object.fromEntries(
-    Object.entries(data.bypasses || {}).filter(([, v]) => v.date === todayKey)
+    Object.entries(data.bypasses || {}).filter(([, v]) => v.date >= cutoffKey)
   );
 
   await ext.storage.local.set({
