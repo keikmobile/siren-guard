@@ -481,3 +481,203 @@ document.getElementById("whitelist-btn-add").addEventListener("click", async () 
 
 loadAndRender();
 loadAndRenderWhitelist();
+
+// --- Analytics ---
+
+function getJSTDateKeyOffset(daysBack) {
+  const now = new Date();
+  const jstOffset = 9 * 60;
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  const jst = new Date(utcMs + jstOffset * 60 * 1000);
+  jst.setDate(jst.getDate() + daysBack);
+  const y = jst.getFullYear();
+  const m = String(jst.getMonth() + 1).padStart(2, "0");
+  const d = String(jst.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function buildAccessChartData(accessLog, rules) {
+  const todayKey = getJSTDateKey();
+  const days = Array.from({ length: 7 }, (_, i) => getJSTDateKeyOffset(-(6 - i)));
+  const domains = (rules || []).map(r => r.domain);
+  const series = domains.map(domain => ({
+    domain,
+    counts: days.map(d => ((accessLog || {})[d] || {})[domain] || 0),
+  }));
+  const allCounts = series.flatMap(s => s.counts);
+  const globalMax = Math.max(...allCounts, 1);
+  return { days, todayKey, series, globalMax };
+}
+
+function buildTimeTodayData(timeLog, rules) {
+  const todayKey = getJSTDateKey();
+  const todayTime = (timeLog || {})[todayKey] || {};
+  return (rules || []).map(r => {
+    const secs = todayTime[r.domain] || 0;
+    return { domain: r.domain, secs, fraction: Math.min(secs / 600, 1) };
+  });
+}
+
+function renderAccessChart(container, chartData) {
+  container.innerHTML = "";
+  const { days, todayKey, series, globalMax } = chartData;
+  if (series.length === 0) {
+    container.innerHTML = '<p class="analytics-empty">ルールが登録されていません</p>';
+    return;
+  }
+  series.forEach(({ domain, counts }) => {
+    const group = document.createElement("div");
+    group.className = "bar-group";
+    const lbl = document.createElement("div");
+    lbl.className = "bar-group-label";
+    lbl.textContent = domain;
+    group.appendChild(lbl);
+    const cols = document.createElement("div");
+    cols.className = "bar-cols";
+    days.forEach((day, i) => {
+      const count = counts[i];
+      const col = document.createElement("div");
+      col.className = "bar-col";
+      const countLbl = document.createElement("div");
+      countLbl.className = "bar-count";
+      countLbl.textContent = count > 0 ? count : "";
+      const track = document.createElement("div");
+      track.className = "bar-track";
+      const fill = document.createElement("div");
+      fill.className = "bar-fill" + (count === 0 ? " zero" : "") + (day === todayKey ? " today" : "");
+      const heightPct = (count / globalMax) * 100;
+      fill.style.height = (count === 0 ? 4 : heightPct) + "%";
+      fill.title = `${day}: ${count}回`;
+      track.appendChild(fill);
+      const dateLbl = document.createElement("div");
+      dateLbl.className = "bar-date";
+      const [, mm, dd] = day.split("-");
+      dateLbl.textContent = `${parseInt(mm)}/${parseInt(dd)}`;
+      col.appendChild(countLbl);
+      col.appendChild(track);
+      col.appendChild(dateLbl);
+      cols.appendChild(col);
+    });
+    group.appendChild(cols);
+    container.appendChild(group);
+  });
+}
+
+function renderTimeToday(container, data) {
+  container.innerHTML = "";
+  if (data.length === 0) {
+    container.innerHTML = '<p class="analytics-empty">ルールが登録されていません</p>';
+    return;
+  }
+  data.forEach(({ domain, secs, fraction }) => {
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    const label = secs === 0 ? "0分" : mins > 0 ? `${mins}分${s > 0 ? s + "秒" : ""}` : `${s}秒`;
+    const row = document.createElement("div");
+    row.className = "progress-row";
+    row.innerHTML = `
+      <div class="progress-label" title="${domain}">${domain}</div>
+      <div class="progress-track">
+        <div class="progress-fill${fraction >= 1 ? " over-limit" : ""}" style="width:${fraction * 100}%"></div>
+      </div>
+      <div class="progress-value">${label} / 10分</div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+const INTENT_PAGE_SIZE = 50;
+let intentOffset = 0;
+let intentAll = [];
+let intentFilter = "all";
+
+function renderIntentLog(container, intentLog, filterDomain) {
+  container.innerHTML = "";
+  intentAll = [...(intentLog || [])].reverse();
+  intentFilter = filterDomain || "all";
+  intentOffset = 0;
+
+  const domains = [...new Set((intentLog || []).map(e => e.domain))].sort();
+  const filterRow = document.createElement("div");
+  filterRow.className = "intent-filter-row";
+  const sel = document.createElement("select");
+  sel.innerHTML = `<option value="all">すべてのドメイン</option>` +
+    domains.map(d => `<option value="${d}"${d === intentFilter ? " selected" : ""}>${d}</option>`).join("");
+  sel.addEventListener("change", () => renderIntentLog(container, intentLog, sel.value));
+  filterRow.appendChild(sel);
+  container.appendChild(filterRow);
+
+  const filtered = intentAll.filter(e => intentFilter === "all" || e.domain === intentFilter);
+  if (filtered.length === 0) {
+    container.insertAdjacentHTML("beforeend", '<p class="analytics-empty">記録がありません</p>');
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "intent-list";
+  container.appendChild(list);
+
+  function appendEntries() {
+    const slice = filtered.slice(intentOffset, intentOffset + INTENT_PAGE_SIZE);
+    slice.forEach(entry => {
+      const el = document.createElement("div");
+      el.className = "intent-entry";
+      const dt = new Date(entry.timestamp);
+      const timeStr = dt.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      el.innerHTML = `
+        <div class="intent-meta">
+          <span class="intent-time">${timeStr}</span>
+          <span class="intent-domain">${entry.domain}</span>
+        </div>
+        ${entry.reason
+          ? `<div class="intent-reason">${entry.reason}</div>`
+          : `<div class="intent-no-reason">（理由なし）</div>`}
+      `;
+      list.appendChild(el);
+    });
+    intentOffset += slice.length;
+    const btnMore = container.querySelector(".btn-more");
+    if (btnMore) btnMore.remove();
+    if (intentOffset < filtered.length) {
+      const btn = document.createElement("button");
+      btn.className = "btn-more";
+      btn.textContent = `もっと見る（残り ${filtered.length - intentOffset} 件）`;
+      btn.addEventListener("click", appendEntries);
+      list.appendChild(btn);
+    }
+  }
+  appendEntries();
+}
+
+let analyticsLoaded = false;
+async function loadAndRenderAnalytics() {
+  const data = await ext.storage.local.get(["accessLog", "timeLog", "intentLog", "rules"]);
+  renderAccessChart(
+    document.getElementById("analytics-access-chart"),
+    buildAccessChartData(data.accessLog, data.rules)
+  );
+  renderTimeToday(
+    document.getElementById("analytics-time-today"),
+    buildTimeTodayData(data.timeLog, data.rules)
+  );
+  renderIntentLog(
+    document.getElementById("analytics-intent-log"),
+    data.intentLog,
+    "all"
+  );
+}
+
+if (location.pathname.endsWith("newtab.html")) {
+  document.getElementById("tab-bar")?.addEventListener("click", e => {
+    const btn = e.target.closest(".tab-btn");
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("tab-rules").style.display = tab === "rules" ? "" : "none";
+    document.getElementById("tab-analytics").style.display = tab === "analytics" ? "" : "none";
+    if (tab === "analytics" && !analyticsLoaded) {
+      loadAndRenderAnalytics();
+      analyticsLoaded = true;
+    }
+  });
+}
